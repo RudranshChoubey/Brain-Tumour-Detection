@@ -1,0 +1,42 @@
+Device: mps
+Found 3929 image/mask pairs
+Patients: train 88 test 22
+Slices: train 320 test 80
+Epoch 1/35  train loss: 1.5170
+Epoch 2/35  train loss: 1.3012
+Epoch 3/35  train loss: 1.2065
+Epoch 4/35  train loss: 1.1294
+Epoch 5/35  train loss: 1.0531
+Epoch 6/35  train loss: 0.9845
+Epoch 7/35  train loss: 0.9208
+Epoch 8/35  train loss: 0.8578
+Epoch 9/35  train loss: 0.7732
+Epoch 10/35  train loss: 0.6975
+Epoch 11/35  train loss: 0.6146
+Epoch 12/35  train loss: 0.5639
+Epoch 13/35  train loss: 0.5070
+Epoch 14/35  train loss: 0.4608
+Epoch 15/35  train loss: 0.3782
+Epoch 16/35  train loss: 0.3659
+Epoch 17/35  train loss: 0.3359
+Epoch 18/35  train loss: 0.3270
+Epoch 19/35  train loss: 0.3131
+Epoch 20/35  train loss: 0.3251
+Epoch 21/35  train loss: 0.2794
+Epoch 22/35  train loss: 0.2781
+Epoch 23/35  train loss: 0.2675
+Epoch 24/35  train loss: 0.2449
+Epoch 25/35  train loss: 0.2463
+Epoch 26/35  train loss: 0.2530
+Epoch 27/35  train loss: 0.2337
+Epoch 28/35  train loss: 0.2018
+Epoch 29/35  train loss: 0.2008
+Epoch 30/35  train loss: 0.2048
+Epoch 31/35  train loss: 0.2320
+Epoch 32/35  train loss: 0.2314
+Epoch 33/35  train loss: 0.1898
+Epoch 34/35  train loss: 0.1767
+Epoch 35/35  train loss: 0.1776
+Test Dice (tumour): 0.7757
+Test IoU  (tumour): 0.6336
+Saved results.png and segmenter.pt
