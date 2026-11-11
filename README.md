@@ -31,6 +31,12 @@ python demo.py path/to/slice.tif     # demo on a slice you choose
 
 Training uses the Mac GPU (`mps`) if available, then CUDA, then the CPU.
 
+The demo works on any computer, wherever the project folder is placed:
+- Train once with `python brain_tumour_unet.py`. This creates a `segmenter.pt` for your machine, and `python demo.py` then works straight away.
+- The `segmenter.pt` in this repository is already trained, so you can skip training. Download the dataset into `data/` and run `python demo.py`.
+- With no dataset, give the demo any MRI slice: `python demo.py path/to/slice.tif`.
+- `segmenter.pt` stores the test slices as `patient_folder/slice.tif`. The demo looks for them inside `data/`, however the dataset was unzipped.
+
 ## Method
 
 **Data.** The dataset has 3,929 slices from 110 patients (`.tif`, 256x256, 3 channels: pre-contrast, FLAIR, post-contrast), each with a mask file. Everything is resized to 128x128 (bilinear for images, nearest-neighbour for masks) and images are scaled to 0-1.

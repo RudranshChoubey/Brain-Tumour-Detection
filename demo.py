@@ -1,5 +1,6 @@
 import os
 import sys
+import glob
 import random
 import numpy as np
 import torch
@@ -15,7 +16,10 @@ model.to(device).eval()
 if len(sys.argv) > 1:
     path = sys.argv[1]
 else:
-    path = random.choice(checkpoint["test_files"])
+    matches = glob.glob(os.path.join(HERE, "data", "**", random.choice(checkpoint["test_files"])), recursive=True)
+    if not matches:
+        sys.exit("Test slice not found. Put the dataset in the data folder or pass an image path.")
+    path = matches[0]
 print("Slice:", path)
 
 x = load_image(path)

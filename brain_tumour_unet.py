@@ -159,6 +159,6 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.savefig(os.path.join(HERE, "results.png"), dpi=150)
 
-    torch.save({"model": model.cpu().state_dict(), "test_files": [p[0] for p in test_pairs]},
+    torch.save({"model": model.cpu().state_dict(), "test_files": [p[2] + "/" + os.path.basename(p[0]) for p in test_pairs]},
                os.path.join(HERE, "segmenter.pt"))
     print("Saved results.png and segmenter.pt")
