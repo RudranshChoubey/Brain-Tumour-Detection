@@ -42,9 +42,10 @@ The demo works on any computer, wherever the project folder is placed:
 **Data.** The dataset has 3,929 slices from 110 patients (`.tif`, 256x256, 3 channels: pre-contrast, FLAIR, post-contrast), each with a mask file. Everything is resized to 128x128 (bilinear for images, nearest-neighbour for masks) and images are scaled to 0-1.
 
 **Subset and split.**
-- Patients are split first (80% train / 20% test, fixed random seed), so slices from one patient are never in both sets: 88 train patients, 22 test patients.
-- Slices are then sampled inside each side, mostly with tumour and some without:
+- Patients are split first (80% train / 10% validation / 10% test, fixed random seed), so slices from one patient are never in more than one set: 77 train, 11 validation and 22 test patients.
+- Slices are then sampled inside each group, mostly with tumour and some without:
   - train: 240 tumour + 80 empty = 320 slices
+  - validation: 30 tumour + 10 empty = 40 slices
   - test: 60 tumour + 20 empty = 80 slices
 
 **Model.** U-Net with three down levels and a bottleneck, using channels 32-64-128-256.
@@ -54,7 +55,10 @@ The demo works on any computer, wherever the project folder is placed:
 
 **Loss.** Binary cross-entropy + soft Dice loss. Tumours cover a tiny part of the image, so BCE alone would let the model predict "no tumour" everywhere. Dice loss penalises that directly.
 
-**Training.** Adam, learning rate 1e-3, batch size 16, 35 epochs. The training loss is printed every epoch.
+**Training.** Adam, starting learning rate 1e-3 with cosine decay to zero, batch size 16, 60 epochs. The training loss and the validation Dice are printed every epoch. Three things keep the small training set from limiting the model too much:
+- **Augmentation.** Every training batch gets a random flip, rotation (up to 15 degrees), zoom (0.9-1.1), shift (up to 10%) and brightness change. The same geometric change is applied to the image and its mask.
+- **Learning-rate decay.** The cosine schedule removes the jitter in the loss that a constant rate caused.
+- **Best-epoch selection.** The weights from the epoch with the highest validation Dice are kept, not simply the last epoch. The test set plays no part in this choice.
 
 **Evaluation.** The probability map is thresholded at 0.5. Dice and IoU for the tumour class are computed over all test pixels pooled together. Per-slice Dice is undefined on slices with no tumour, so pooling avoids that. Pixel accuracy is deliberately not reported: predicting "no tumour" everywhere already scores about 98% on this data.
 
@@ -64,22 +68,34 @@ Test set: 80 slices from 22 patients that were never seen in training.
 
 | Metric (tumour class) | Value |
 |---|---|
-| Dice | **0.7757** |
-| IoU | **0.6336** |
+| Dice | **0.7756** |
+| IoU | **0.6334** |
 
-Training loss (BCE + Dice) fell from 1.517 at epoch 1 to 0.178 at epoch 35. It dropped quickly until about epoch 20, then flattened and jittered between 0.18 and 0.25. The full per-epoch log is in `training_log.txt`.
+The best validation Dice was 0.8647. Training loss (BCE + Dice) fell from 1.498 at epoch 1 to 0.156 at epoch 60, with the cosine schedule smoothing it out in the later epochs. The full per-epoch log is in `training_log.txt`.
+
+On the 80 test slices, 11 of the 60 slices with a tumour got an empty prediction, and 2 of the 20 empty slices got a false tumour.
 
 ![Test predictions](results.png)
 
-The figure shows the first 5 test slices that contain a tumour (the MRI is displayed from the FLAIR channel). The model is not uniformly good:
-- Slice 2: the tumour is found, but the prediction adds an extra region.
-- Slice 5: the tumour is found, but the predicted region is smaller than the ground truth.
-- Slices 1, 3 and 4: the tumour is missed and the predicted mask is empty. Slice 1 is a very small tumour.
+The figure shows the first 5 test slices that contain a tumour (the MRI is displayed from the FLAIR channel):
+- Slices 1 and 2: the prediction closely matches the ground truth.
+- Slice 3: a good match, with a small gap along the left edge.
+- Slice 5: the tumour is found, but the prediction has a hole where the tumour's dark centre is. The ground truth is solid.
+- Slice 4: a thin tumour that is missed. The predicted mask is empty.
+
+**Compared with the first version of this project** (no augmentation, constant learning rate, 35 epochs, last-epoch weights), measured on the same test slices:
+
+| Test slices (80 from the same 22 test patients) | First version, Dice | This version, Dice |
+|---|---|---|
+| The slices above | 0.7654 | 0.7756 |
+| A second random draw of 80 slices | 0.7304 | 0.7704 |
+
+The gain is real but modest (+0.01 and +0.04), and the two draws differ by more than the gain on the first. Training on 1,200 slices instead of 320 raised Dice on the second draw to 0.7947, but the assignment asks for about 400 slices, so that setting is not used here.
 
 ## Limitations
 
-- **Small experiment.** The test set is 80 slices and the model was trained once with one random seed, so the Dice of 0.78 would move if the patient split or seed changed.
-- **No validation set.** The 35-epoch count was fixed in advance, and the test set was not used to choose anything. The test score comes from the final epoch, not the best epoch.
-- **Pooled metric.** Pooled Dice and IoU weight large tumours more than small ones, and the small tumours are where this model fails most.
-- **No augmentation.** Training used only 320 slices with no flips, rotations or intensity changes. This is a likely cause of the missed tumours and the jittery loss.
-- **Only 128x128 input.** Downscaling from 256x256 removes detail, which hurts the smallest tumours.
+- **Small experiment.** The test set is 80 slices and the model was trained once with one random seed, so the Dice of 0.78 would move if the patient split or seed changed. The second test draw above scored 0.04 lower for the first version.
+- **Validation set is also small.** It has 40 slices from 11 patients, and its best Dice (0.86) is higher than the test Dice (0.78). Picking the best epoch on it makes it a slightly optimistic score, which is why the test set is kept separate.
+- **Pooled metric.** Pooled Dice and IoU weight large tumours more than small ones.
+- **Limited training data.** The assignment's roughly 400-slice subset means 320 training slices. More slices helped in a side experiment (see Results).
+- **Only 128x128 input.** Downscaling from 256x256 removes detail, which can hurt thin or small tumours.

@@ -1,5 +1,7 @@
 import os
+import copy
 import glob
+import math
 import random
 import numpy as np
 import torch
@@ -71,6 +73,35 @@ def dice_loss(pred, target):
     return 1 - (2 * inter + 1) / (pred.sum() + target.sum() + 1)
 
 
+def augment(x, y):
+    n = x.size(0)
+    angle = (torch.rand(n, device=x.device) * 2 - 1) * 15 * math.pi / 180
+    scale = 0.9 + 0.2 * torch.rand(n, device=x.device)
+    flip = (torch.rand(n, device=x.device) < 0.5).float() * 2 - 1
+    shift = (torch.rand(n, 2, device=x.device) * 2 - 1) * 0.1
+    cos, sin = torch.cos(angle) / scale, torch.sin(angle) / scale
+    theta = torch.stack([torch.stack([cos * flip, -sin, shift[:, 0]], dim=1),
+                         torch.stack([sin * flip, cos, shift[:, 1]], dim=1)], dim=1)
+    grid = F.affine_grid(theta, x.shape, align_corners=False)
+    x = F.grid_sample(x, grid, align_corners=False)
+    y = (F.grid_sample(y, grid, align_corners=False) > 0.5).float()
+    x = x * (0.9 + 0.2 * torch.rand(n, 1, 1, 1, device=x.device))
+    return x, y
+
+
+def predict(model, X, device):
+    model.eval()
+    with torch.no_grad():
+        return torch.cat([model(X[i:i + 16].to(device)).cpu() for i in range(0, len(X), 16)]) > 0.5
+
+
+def dice_iou(pred, target):
+    pred = pred.float()
+    inter = (pred * target).sum()
+    union = pred.sum() + target.sum() - inter
+    return (2 * inter / (pred.sum() + target.sum() + 1e-8)).item(), (inter / (union + 1e-8)).item()
+
+
 if __name__ == "__main__":
     random.seed(0)
     torch.manual_seed(0)
@@ -92,9 +123,11 @@ if __name__ == "__main__":
     patients = sorted(set(p[2] for p in pairs))
     random.shuffle(patients)
     n_train = int(0.8 * len(patients))
-    train_patients = patients[:n_train]
+    n_val = int(0.1 * len(patients))
     test_patients = patients[n_train:]
-    print("Patients: train", len(train_patients), "test", len(test_patients))
+    val_patients = patients[n_train - n_val:n_train]
+    train_patients = patients[:n_train - n_val]
+    print("Patients: train", len(train_patients), "val", len(val_patients), "test", len(test_patients))
 
 
     def pick(patient_list, n_tumour, n_empty):
@@ -104,11 +137,14 @@ if __name__ == "__main__":
 
 
     train_pairs = pick(train_patients, 240, 80)
+    val_pairs = pick(val_patients, 30, 10)
     test_pairs = pick(test_patients, 60, 20)
-    print("Slices: train", len(train_pairs), "test", len(test_pairs))
+    print("Slices: train", len(train_pairs), "val", len(val_pairs), "test", len(test_pairs))
 
     X_train = torch.stack([load_image(p[0]) for p in train_pairs])
     Y_train = torch.stack([load_mask(p[1]) for p in train_pairs])
+    X_val = torch.stack([load_image(p[0]) for p in val_pairs])
+    Y_val = torch.stack([load_mask(p[1]) for p in val_pairs])
     X_test = torch.stack([load_image(p[0]) for p in test_pairs])
     Y_test = torch.stack([load_mask(p[1]) for p in test_pairs])
     train_loader = DataLoader(TensorDataset(X_train, Y_train), batch_size=16, shuffle=True)
@@ -116,31 +152,33 @@ if __name__ == "__main__":
     # ==================== Training ====================
     model = UNet().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    epochs = 35
+    epochs = 60
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    best_dice = -1
 
     for epoch in range(epochs):
         model.train()
         total = 0
         for x, y in train_loader:
-            x, y = x.to(device), y.to(device)
+            x, y = augment(x.to(device), y.to(device))
             pred = model(x)
             loss = F.binary_cross_entropy(pred, y) + dice_loss(pred, y)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             total += loss.item() * x.size(0)
-        print(f"Epoch {epoch + 1}/{epochs}  train loss: {total / len(X_train):.4f}")
+        scheduler.step()
+        val_dice, _ = dice_iou(predict(model, X_val, device), Y_val)
+        if val_dice > best_dice:
+            best_dice = val_dice
+            best_state = copy.deepcopy(model.state_dict())
+        print(f"Epoch {epoch + 1}/{epochs}  train loss: {total / len(X_train):.4f}  val dice: {val_dice:.4f}")
 
     # ==================== Evaluation ====================
-    model.eval()
-    with torch.no_grad():
-        probs = torch.cat([model(X_test[i:i + 16].to(device)).cpu() for i in range(0, len(X_test), 16)])
-    preds = (probs > 0.5).float()
-
-    inter = (preds * Y_test).sum()
-    union = preds.sum() + Y_test.sum() - inter
-    dice = 2 * inter / (preds.sum() + Y_test.sum() + 1e-8)
-    iou = inter / (union + 1e-8)
+    model.load_state_dict(best_state)
+    preds = predict(model, X_test, device).float()
+    dice, iou = dice_iou(preds, Y_test)
+    print(f"Best validation Dice: {best_dice:.4f}")
     print(f"Test Dice (tumour): {dice:.4f}")
     print(f"Test IoU  (tumour): {iou:.4f}")
 
